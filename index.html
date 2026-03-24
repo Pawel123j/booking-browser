@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="pl">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>BookingFlow Studio</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="ambient"></div>
+    <div class="app-shell">
+      <header class="hero card glass">
+        <div>
+          <p class="eyebrow">BookingFlow Studio</p>
+          <h1>Rezerwacje wizyt bez backendu, ale jak człowiek</h1>
+          <p class="hero-copy">
+            Rozbudowana aplikacja przeglądarkowa do portfolio: sloty, blokada konfliktów,
+            przenoszenie wizyt, lista oczekujących, strefy czasowe, symulacja maili,
+            statystyki i panel operacyjny.
+          </p>
+        </div>
+        <div class="hero-actions">
+          <button id="themeToggleBtn" class="ghost">🌗 Motyw</button>
+          <button id="exportDataBtn" class="ghost">⬇️ Eksport JSON</button>
+          <button id="resetDataBtn" class="danger">Reset demo</button>
+        </div>
+      </header>
+
+      <section class="stats-grid" id="statsGrid"></section>
+
+      <main class="layout">
+        <aside class="sidebar stack">
+          <section class="card glass stack gap-sm">
+            <div class="section-top">
+              <div>
+                <p class="section-kicker">Krok 1</p>
+                <h2>Usługa i specjalista</h2>
+              </div>
+              <span class="badge soft" id="clientTimeZoneBadge"></span>
+            </div>
+            <div id="serviceCards" class="choice-grid"></div>
+            <div id="resourceCards" class="choice-grid"></div>
+          </section>
+
+          <section class="card glass stack gap-sm">
+            <div class="section-top">
+              <div>
+                <p class="section-kicker">Krok 2</p>
+                <h2>Zakres i filtry</h2>
+              </div>
+            </div>
+            <div class="range-pills">
+              <button class="range-pill active" data-range="7">7 dni</button>
+              <button class="range-pill" data-range="14">14 dni</button>
+              <button class="range-pill" data-range="30">30 dni</button>
+            </div>
+            <div class="form-grid single-mobile">
+              <label>
+                Od
+                <input id="fromInput" type="date" />
+              </label>
+              <label>
+                Do
+                <input id="toInput" type="date" />
+              </label>
+            </div>
+            <div class="inline-filters">
+              <label class="inline-toggle">
+                <input id="showMorningOnly" type="checkbox" />
+                <span>Tylko rano</span>
+              </label>
+              <label class="inline-toggle">
+                <input id="showEveningOnly" type="checkbox" />
+                <span>Tylko po 15:00</span>
+              </label>
+            </div>
+            <div class="toolbar wrap">
+              <button id="loadSlotsBtn" class="primary">Pokaż sloty</button>
+              <span class="muted" id="availabilityMeta"></span>
+            </div>
+          </section>
+
+          <section class="card glass stack gap-sm">
+            <div class="section-top">
+              <div>
+                <p class="section-kicker">Krok 3</p>
+                <h2>Rezerwacja / przełożenie</h2>
+              </div>
+              <span id="bookingModeBadge" class="badge success">Nowa rezerwacja</span>
+            </div>
+            <div class="selected-slot-box">
+              <span class="muted">Wybrany termin</span>
+              <strong id="selectedSlotLabel">brak</strong>
+              <p id="selectedSlotSubtext" class="muted small">Wybierz slot z widoku po prawej.</p>
+            </div>
+            <div class="form-grid">
+              <label>
+                Imię i nazwisko
+                <input id="nameInput" type="text" placeholder="Paweł Kowalski" />
+              </label>
+              <label>
+                E-mail
+                <input id="emailInput" type="email" placeholder="pawel@example.com" />
+              </label>
+              <label>
+                Telefon
+                <input id="phoneInput" type="tel" placeholder="+48 500 600 700" />
+              </label>
+              <label>
+                Priorytet
+                <select id="prioritySelect">
+                  <option value="normal">Normalny</option>
+                  <option value="vip">VIP</option>
+                  <option value="urgent">Pilny</option>
+                </select>
+              </label>
+              <label class="full">
+                Notatka
+                <textarea id="notesInput" rows="4" placeholder="Np. preferowana godzina albo dodatkowe info"></textarea>
+              </label>
+            </div>
+            <div class="toolbar wrap">
+              <button id="bookBtn" class="primary">Zapisz rezerwację</button>
+              <button id="waitlistBtn" class="ghost">Dodaj do listy oczekujących</button>
+              <button id="clearModeBtn" class="ghost hidden">Wyjdź z trybu przełożenia</button>
+            </div>
+            <p id="bookingStatus" class="status-line muted"></p>
+          </section>
+        </aside>
+
+        <section class="content stack">
+          <section class="card glass stack gap-sm">
+            <div class="section-top">
+              <div>
+                <p class="section-kicker">Terminy</p>
+                <h2>Dostępność tygodniowa</h2>
+              </div>
+              <div class="legend-row">
+                <span class="legend-pill available">Wolny</span>
+                <span class="legend-pill selected">Wybrany</span>
+                <span class="legend-pill blocked">Zajęty / poza filtrem</span>
+              </div>
+            </div>
+            <div id="availabilityBoard" class="availability-board"></div>
+          </section>
+
+          <section class="tabs">
+            <div class="tab-buttons">
+              <button class="tab-btn active" data-tab="bookings">Moje wizyty</button>
+              <button class="tab-btn" data-tab="ops">Panel operacyjny</button>
+              <button class="tab-btn" data-tab="notifications">Powiadomienia</button>
+            </div>
+
+            <div class="tab-panel active" data-panel="bookings">
+              <section class="card glass stack gap-sm">
+                <div class="section-top">
+                  <div>
+                    <p class="section-kicker">Klient</p>
+                    <h2>Moje rezerwacje</h2>
+                  </div>
+                </div>
+                <div class="toolbar wrap">
+                  <input id="lookupEmailInput" type="email" placeholder="Podaj e-mail użyty przy rezerwacji" />
+                  <button id="loadMyBookingsBtn" class="primary">Pobierz</button>
+                  <div class="segmented" id="bookingFilterSegment">
+                    <button class="seg-btn active" data-filter="all">Wszystkie</button>
+                    <button class="seg-btn" data-filter="upcoming">Nadchodzące</button>
+                    <button class="seg-btn" data-filter="cancelled">Anulowane</button>
+                  </div>
+                </div>
+                <div id="appointmentsContainer" class="appointments"></div>
+                <div class="subsection">
+                  <div class="section-top compact">
+                    <h3>Lista oczekujących</h3>
+                    <span class="muted small">Symulacja kolejki, gdy brak wolnych miejsc.</span>
+                  </div>
+                  <div id="waitlistContainer" class="appointments"></div>
+                </div>
+              </section>
+            </div>
+
+            <div class="tab-panel" data-panel="ops">
+              <section class="card glass stack gap-sm">
+                <div class="section-top">
+                  <div>
+                    <p class="section-kicker">Ops</p>
+                    <h2>Panel operacyjny</h2>
+                  </div>
+                  <span class="badge soft">Demo analytics</span>
+                </div>
+                <div id="opsSummary" class="ops-grid"></div>
+                <div class="subsection">
+                  <div class="section-top compact">
+                    <h3>Obłożenie specjalistów</h3>
+                  </div>
+                  <div id="resourceLoadBoard" class="load-board"></div>
+                </div>
+                <div class="subsection">
+                  <div class="section-top compact">
+                    <h3>Popularność usług</h3>
+                  </div>
+                  <div id="servicePopularity" class="bar-list"></div>
+                </div>
+              </section>
+            </div>
+
+            <div class="tab-panel" data-panel="notifications">
+              <section class="card glass stack gap-sm">
+                <div class="section-top">
+                  <div>
+                    <p class="section-kicker">Outbox</p>
+                    <h2>Powiadomienia i historia</h2>
+                  </div>
+                </div>
+                <div id="mailboxContainer" class="mailbox"></div>
+              </section>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <template id="statTemplate">
+      <article class="stat-card card glass">
+        <p class="stat-label"></p>
+        <strong class="stat-value"></strong>
+        <span class="stat-help muted"></span>
+      </article>
+    </template>
+
+    <template id="serviceCardTemplate">
+      <button class="choice-card service-card"></button>
+    </template>
+
+    <template id="resourceCardTemplate">
+      <button class="choice-card resource-card"></button>
+    </template>
+
+    <template id="dayColumnTemplate">
+      <article class="day-column">
+        <div class="day-column-top">
+          <strong class="day-title"></strong>
+          <span class="day-meta muted small"></span>
+        </div>
+        <div class="day-slots"></div>
+      </article>
+    </template>
+
+    <template id="slotTemplate">
+      <button class="slot-chip"></button>
+    </template>
+
+    <template id="bookingTemplate">
+      <article class="appointment-item">
+        <div class="appointment-main">
+          <div class="appointment-head">
+            <h3 class="appointment-title"></h3>
+            <span class="appointment-ref badge soft"></span>
+          </div>
+          <p class="appointment-meta"></p>
+          <p class="appointment-extra muted"></p>
+          <p class="appointment-notes"></p>
+        </div>
+        <div class="appointment-actions">
+          <span class="appointment-status"></span>
+          <button class="reschedule-btn ghost">Przełóż</button>
+          <button class="cancel-btn danger">Anuluj</button>
+        </div>
+      </article>
+    </template>
+
+    <template id="waitlistTemplate">
+      <article class="appointment-item compact-card">
+        <div class="appointment-main">
+          <h3 class="appointment-title"></h3>
+          <p class="appointment-meta"></p>
+          <p class="appointment-notes"></p>
+        </div>
+        <div class="appointment-actions">
+          <span class="appointment-status pending"></span>
+        </div>
+      </article>
+    </template>
+
+    <template id="mailTemplate">
+      <article class="mail-item">
+        <div class="mail-top">
+          <div>
+            <strong class="mail-subject"></strong>
+            <p class="mail-to muted"></p>
+          </div>
+          <span class="mail-time muted"></span>
+        </div>
+        <pre class="mail-body"></pre>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
