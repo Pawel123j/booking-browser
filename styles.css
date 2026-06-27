@@ -48,7 +48,31 @@ input, select, textarea {
   padding: 14px 16px;
   background: rgba(255, 255, 255, 0.05);
   color: var(--text);
-  outline: none;
+}
+
+/* Keyboard focus indicator (mouse clicks stay clean via :focus-visible). */
+:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  border-color: var(--primary);
+  outline-offset: 0;
+}
+
+/* Visually hidden but reachable by assistive tech / triggered programmatically. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 body.light input,
 body.light select,
@@ -452,4 +476,21 @@ body.light .mail-body { background: rgba(248,250,252,0.95); }
   .appointment-actions { align-items: flex-start; }
   .bar-item { grid-template-columns: 1fr; }
   .mail-top { flex-direction: column; }
+}
+
+/* Respect users who prefer less motion: drop transitions and hover lifts. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.001ms !important;
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .choice-card:hover,
+  .slot-chip:hover,
+  button:hover {
+    transform: none;
+  }
 }

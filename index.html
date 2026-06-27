@@ -4,6 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>BookingFlow Studio</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E%F0%9F%93%85%3C/text%3E%3C/svg%3E" />
+    <meta name="description" content="BookingFlow Studio — demo rezerwacji wizyt w przeglądarce: sloty, strefy czasowe, konflikty, lista oczekujących." />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -20,9 +22,11 @@
           </p>
         </div>
         <div class="hero-actions">
-          <button id="themeToggleBtn" class="ghost">🌗 Motyw</button>
-          <button id="exportDataBtn" class="ghost">⬇️ Eksport JSON</button>
-          <button id="resetDataBtn" class="danger">Reset demo</button>
+          <button id="themeToggleBtn" type="button" class="ghost">🌗 Motyw</button>
+          <button id="exportDataBtn" type="button" class="ghost">⬇️ Eksport JSON</button>
+          <button id="importDataBtn" type="button" class="ghost">⬆️ Import JSON</button>
+          <input id="importFileInput" type="file" accept="application/json,.json" class="visually-hidden" aria-hidden="true" tabindex="-1" />
+          <button id="resetDataBtn" type="button" class="danger">Reset demo</button>
         </div>
       </header>
 
@@ -49,10 +53,10 @@
                 <h2>Zakres i filtry</h2>
               </div>
             </div>
-            <div class="range-pills">
-              <button class="range-pill active" data-range="7">7 dni</button>
-              <button class="range-pill" data-range="14">14 dni</button>
-              <button class="range-pill" data-range="30">30 dni</button>
+            <div class="range-pills" role="group" aria-label="Zakres dni">
+              <button type="button" class="range-pill active" data-range="7" aria-pressed="true">7 dni</button>
+              <button type="button" class="range-pill" data-range="14" aria-pressed="false">14 dni</button>
+              <button type="button" class="range-pill" data-range="30" aria-pressed="false">30 dni</button>
             </div>
             <div class="form-grid single-mobile">
               <label>
@@ -75,7 +79,7 @@
               </label>
             </div>
             <div class="toolbar wrap">
-              <button id="loadSlotsBtn" class="primary">Pokaż sloty</button>
+              <button id="loadSlotsBtn" type="button" class="primary">Pokaż sloty</button>
               <span class="muted" id="availabilityMeta"></span>
             </div>
           </section>
@@ -93,38 +97,40 @@
               <strong id="selectedSlotLabel">brak</strong>
               <p id="selectedSlotSubtext" class="muted small">Wybierz slot z widoku po prawej.</p>
             </div>
-            <div class="form-grid">
-              <label>
-                Imię i nazwisko
-                <input id="nameInput" type="text" placeholder="Paweł Kowalski" />
-              </label>
-              <label>
-                E-mail
-                <input id="emailInput" type="email" placeholder="pawel@example.com" />
-              </label>
-              <label>
-                Telefon
-                <input id="phoneInput" type="tel" placeholder="+48 500 600 700" />
-              </label>
-              <label>
-                Priorytet
-                <select id="prioritySelect">
-                  <option value="normal">Normalny</option>
-                  <option value="vip">VIP</option>
-                  <option value="urgent">Pilny</option>
-                </select>
-              </label>
-              <label class="full">
-                Notatka
-                <textarea id="notesInput" rows="4" placeholder="Np. preferowana godzina albo dodatkowe info"></textarea>
-              </label>
-            </div>
-            <div class="toolbar wrap">
-              <button id="bookBtn" class="primary">Zapisz rezerwację</button>
-              <button id="waitlistBtn" class="ghost">Dodaj do listy oczekujących</button>
-              <button id="clearModeBtn" class="ghost hidden">Wyjdź z trybu przełożenia</button>
-            </div>
-            <p id="bookingStatus" class="status-line muted"></p>
+            <form id="bookingForm" novalidate>
+              <div class="form-grid">
+                <label>
+                  Imię i nazwisko
+                  <input id="nameInput" type="text" autocomplete="name" placeholder="Paweł Kowalski" />
+                </label>
+                <label>
+                  E-mail
+                  <input id="emailInput" type="email" autocomplete="email" placeholder="pawel@example.com" />
+                </label>
+                <label>
+                  Telefon
+                  <input id="phoneInput" type="tel" autocomplete="tel" placeholder="+48 500 600 700" />
+                </label>
+                <label>
+                  Priorytet
+                  <select id="prioritySelect">
+                    <option value="normal">Normalny</option>
+                    <option value="vip">VIP</option>
+                    <option value="urgent">Pilny</option>
+                  </select>
+                </label>
+                <label class="full">
+                  Notatka
+                  <textarea id="notesInput" rows="4" placeholder="Np. preferowana godzina albo dodatkowe info"></textarea>
+                </label>
+              </div>
+              <div class="toolbar wrap">
+                <button id="bookBtn" type="submit" class="primary">Zapisz rezerwację</button>
+                <button id="waitlistBtn" type="button" class="ghost">Dodaj do listy oczekujących</button>
+                <button id="clearModeBtn" type="button" class="ghost hidden">Wyjdź z trybu przełożenia</button>
+              </div>
+              <p id="bookingStatus" class="status-line muted" role="status" aria-live="polite"></p>
+            </form>
           </section>
         </aside>
 
@@ -138,20 +144,20 @@
               <div class="legend-row">
                 <span class="legend-pill available">Wolny</span>
                 <span class="legend-pill selected">Wybrany</span>
-                <span class="legend-pill blocked">Zajęty / poza filtrem</span>
+                <span class="legend-pill blocked">Zajęty</span>
               </div>
             </div>
             <div id="availabilityBoard" class="availability-board"></div>
           </section>
 
           <section class="tabs">
-            <div class="tab-buttons">
-              <button class="tab-btn active" data-tab="bookings">Moje wizyty</button>
-              <button class="tab-btn" data-tab="ops">Panel operacyjny</button>
-              <button class="tab-btn" data-tab="notifications">Powiadomienia</button>
+            <div class="tab-buttons" role="tablist" aria-label="Widoki">
+              <button id="tab-bookings" type="button" class="tab-btn active" data-tab="bookings" role="tab" aria-selected="true" aria-controls="panel-bookings">Moje wizyty</button>
+              <button id="tab-ops" type="button" class="tab-btn" data-tab="ops" role="tab" aria-selected="false" aria-controls="panel-ops" tabindex="-1">Panel operacyjny</button>
+              <button id="tab-notifications" type="button" class="tab-btn" data-tab="notifications" role="tab" aria-selected="false" aria-controls="panel-notifications" tabindex="-1">Powiadomienia</button>
             </div>
 
-            <div class="tab-panel active" data-panel="bookings">
+            <div class="tab-panel active" data-panel="bookings" id="panel-bookings" role="tabpanel" aria-labelledby="tab-bookings">
               <section class="card glass stack gap-sm">
                 <div class="section-top">
                   <div>
@@ -160,12 +166,12 @@
                   </div>
                 </div>
                 <div class="toolbar wrap">
-                  <input id="lookupEmailInput" type="email" placeholder="Podaj e-mail użyty przy rezerwacji" />
-                  <button id="loadMyBookingsBtn" class="primary">Pobierz</button>
-                  <div class="segmented" id="bookingFilterSegment">
-                    <button class="seg-btn active" data-filter="all">Wszystkie</button>
-                    <button class="seg-btn" data-filter="upcoming">Nadchodzące</button>
-                    <button class="seg-btn" data-filter="cancelled">Anulowane</button>
+                  <input id="lookupEmailInput" type="email" autocomplete="email" aria-label="E-mail do wyszukania rezerwacji" placeholder="Podaj e-mail użyty przy rezerwacji" />
+                  <button id="loadMyBookingsBtn" type="button" class="primary">Pobierz</button>
+                  <div class="segmented" id="bookingFilterSegment" role="group" aria-label="Filtr rezerwacji">
+                    <button type="button" class="seg-btn active" data-filter="all" aria-pressed="true">Wszystkie</button>
+                    <button type="button" class="seg-btn" data-filter="upcoming" aria-pressed="false">Nadchodzące</button>
+                    <button type="button" class="seg-btn" data-filter="cancelled" aria-pressed="false">Anulowane</button>
                   </div>
                 </div>
                 <div id="appointmentsContainer" class="appointments"></div>
@@ -179,7 +185,7 @@
               </section>
             </div>
 
-            <div class="tab-panel" data-panel="ops">
+            <div class="tab-panel" data-panel="ops" id="panel-ops" role="tabpanel" aria-labelledby="tab-ops">
               <section class="card glass stack gap-sm">
                 <div class="section-top">
                   <div>
@@ -204,7 +210,7 @@
               </section>
             </div>
 
-            <div class="tab-panel" data-panel="notifications">
+            <div class="tab-panel" data-panel="notifications" id="panel-notifications" role="tabpanel" aria-labelledby="tab-notifications">
               <section class="card glass stack gap-sm">
                 <div class="section-top">
                   <div>
@@ -229,11 +235,11 @@
     </template>
 
     <template id="serviceCardTemplate">
-      <button class="choice-card service-card"></button>
+      <button type="button" class="choice-card service-card" aria-pressed="false"></button>
     </template>
 
     <template id="resourceCardTemplate">
-      <button class="choice-card resource-card"></button>
+      <button type="button" class="choice-card resource-card" aria-pressed="false"></button>
     </template>
 
     <template id="dayColumnTemplate">
@@ -247,7 +253,7 @@
     </template>
 
     <template id="slotTemplate">
-      <button class="slot-chip"></button>
+      <button type="button" class="slot-chip"></button>
     </template>
 
     <template id="bookingTemplate">
@@ -263,8 +269,8 @@
         </div>
         <div class="appointment-actions">
           <span class="appointment-status"></span>
-          <button class="reschedule-btn ghost">Przełóż</button>
-          <button class="cancel-btn danger">Anuluj</button>
+          <button type="button" class="reschedule-btn ghost">Przełóż</button>
+          <button type="button" class="cancel-btn danger">Anuluj</button>
         </div>
       </article>
     </template>
@@ -295,6 +301,6 @@
       </article>
     </template>
 
-    <script src="app.js"></script>
+    <script type="module" src="app.js"></script>
   </body>
 </html>
