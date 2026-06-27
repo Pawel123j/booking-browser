@@ -1,3 +1,16 @@
+import {
+  addDays,
+  addMinutesIso,
+  daysAgoIso,
+  nextWeekdayAt,
+  toDateInputValue,
+  localDatePartsInZone,
+  overlaps,
+  formatDateRange,
+  formatSlotMeta,
+} from "./dateUtils.js";
+import { computeAvailability } from "./availability.js";
+
 const STORAGE_KEY = "bookingflow-studio-v1";
 const THEME_KEY = "bookingflow-studio-theme";
 const SYNC_CHANNEL_NAME = "bookingflow-studio-sync";
@@ -80,6 +93,7 @@ const els = {
   selectedSlotLabel: document.getElementById("selectedSlotLabel"),
   selectedSlotSubtext: document.getElementById("selectedSlotSubtext"),
   bookingModeBadge: document.getElementById("bookingModeBadge"),
+  bookingForm: document.getElementById("bookingForm"),
   nameInput: document.getElementById("nameInput"),
   emailInput: document.getElementById("emailInput"),
   phoneInput: document.getElementById("phoneInput"),
@@ -100,12 +114,23 @@ const els = {
   themeToggleBtn: document.getElementById("themeToggleBtn"),
   resetDataBtn: document.getElementById("resetDataBtn"),
   exportDataBtn: document.getElementById("exportDataBtn"),
+  importDataBtn: document.getElementById("importDataBtn"),
+  importFileInput: document.getElementById("importFileInput"),
   rangePills: [...document.querySelectorAll(".range-pill")],
   tabButtons: [...document.querySelectorAll(".tab-btn")],
   tabPanels: [...document.querySelectorAll(".tab-panel")],
   bookingFilterSegment: document.getElementById("bookingFilterSegment"),
   filterButtons: [...document.querySelectorAll(".seg-btn")],
 };
+
+// Small DOM helper so dynamic content goes through textContent (no innerHTML
+// with user/imported data => no XSS surface).
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text != null) node.textContent = text;
+  return node;
+}
 
 function structuredSeed() {
   return JSON.parse(JSON.stringify(seed));
@@ -180,8 +205,8 @@ function buildSeedWithDemoData() {
       phone: "+48 500 777 888",
       notesCustomer: "Najlepiej po 16:00.",
       priority: "vip",
-      desiredFrom: new Date().toISOString().slice(0, 10),
-      desiredTo: addDays(new Date(), 10).toISOString().slice(0, 10),
+      desiredFrom: toDateInputValue(new Date()),
+      desiredTo: toDateInputValue(addDays(new Date(), 10)),
       status: "WAITING",
       createdAt: new Date().toISOString(),
     },
@@ -198,6 +223,16 @@ function buildSeedWithDemoData() {
   return demo;
 }
 
+function normalizeData(parsed) {
+  return {
+    services: Array.isArray(parsed.services) && parsed.services.length ? parsed.services : structuredSeed().services,
+    resources: Array.isArray(parsed.resources) && parsed.resources.length ? parsed.resources : structuredSeed().resources,
+    appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
+    waitlist: Array.isArray(parsed.waitlist) ? parsed.waitlist : [],
+    mailbox: Array.isArray(parsed.mailbox) ? parsed.mailbox : [],
+  };
+}
+
 function loadData() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -206,14 +241,7 @@ function loadData() {
     return demo;
   }
   try {
-    const parsed = JSON.parse(raw);
-    return {
-      services: Array.isArray(parsed.services) && parsed.services.length ? parsed.services : structuredSeed().services,
-      resources: Array.isArray(parsed.resources) && parsed.resources.length ? parsed.resources : structuredSeed().resources,
-      appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
-      waitlist: Array.isArray(parsed.waitlist) ? parsed.waitlist : [],
-      mailbox: Array.isArray(parsed.mailbox) ? parsed.mailbox : [],
-    };
+    return normalizeData(JSON.parse(raw));
   } catch {
     const demo = buildSeedWithDemoData();
     persist(demo);
@@ -263,39 +291,6 @@ function bootTheme() {
   setTheme(localStorage.getItem(THEME_KEY) || "dark");
 }
 
-function toDateInputValue(date) {
-  return new Date(date.getFullYear(), date.getMonth(), date.getDate()).toISOString().slice(0, 10);
-}
-
-function addDays(date, days) {
-  const copy = new Date(date);
-  copy.setDate(copy.getDate() + days);
-  return copy;
-}
-
-function daysAgoIso(days) {
-  const copy = new Date();
-  copy.setDate(copy.getDate() - days);
-  return copy.toISOString();
-}
-
-function addMinutesIso(iso, minutes) {
-  return new Date(new Date(iso).getTime() + minutes * 60_000).toISOString();
-}
-
-function nextWeekdayAt(referenceDate, weekday, hour, minute) {
-  const date = new Date(referenceDate);
-  date.setHours(12, 0, 0, 0);
-  const currentWeekday = date.getDay();
-  let delta = (weekday - currentWeekday + 7) % 7;
-  if (delta === 0) delta = 7;
-  date.setDate(date.getDate() + delta);
-  const timeZone = "Europe/Warsaw";
-  const parts = localDatePartsInZone(date, timeZone);
-  const start = zonedDateToUtcIso({ ...parts, hour, minute }, timeZone);
-  return { start };
-}
-
 function getSelectedService() {
   return state.services.find((service) => service.id === state.selectedServiceId);
 }
@@ -321,169 +316,6 @@ function makeReferenceCode() {
   return `BK-${Math.random().toString(36).slice(2, 6).toUpperCase()}-${String(Date.now()).slice(-4)}`;
 }
 
-function localDatePartsInZone(date, timeZone) {
-  const parts = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    weekday: "short",
-  }).formatToParts(date);
-  const obj = Object.fromEntries(parts.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  return {
-    year: Number(obj.year),
-    month: Number(obj.month),
-    day: Number(obj.day),
-    weekdayShort: obj.weekday,
-  };
-}
-
-function zonedDateToUtcIso({ year, month, day, hour, minute }, timeZone) {
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  const local = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(utcGuess);
-  const got = Object.fromEntries(local.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  const gotMinutes = Date.UTC(Number(got.year), Number(got.month) - 1, Number(got.day), Number(got.hour), Number(got.minute));
-  const wantMinutes = Date.UTC(year, month - 1, day, hour, minute);
-  const diff = wantMinutes - gotMinutes;
-  return new Date(utcGuess.getTime() + diff).toISOString();
-}
-
-function weekdayMap(shortName) {
-  return { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }[shortName] ?? 0;
-}
-
-function toMinutes(hhmm) {
-  const [hour, minute] = hhmm.split(":").map(Number);
-  return hour * 60 + minute;
-}
-
-function overlaps(aStart, aEnd, bStart, bEnd) {
-  return aStart < bEnd && bStart < aEnd;
-}
-
-function isWithinBreak(resource, weekday, slotStartMinute, slotEndMinute) {
-  const breaks = resource.breakHours?.[weekday] || [];
-  return breaks.some(([start, end]) => overlaps(slotStartMinute, slotEndMinute, toMinutes(start), toMinutes(end)));
-}
-
-function isMorning(hour) {
-  return hour < 12;
-}
-
-function isEvening(hour) {
-  return hour >= 15;
-}
-
-function computeAvailability(service = getSelectedService(), resource = getSelectedResource(), options = {}) {
-  if (!service || !resource || !els.fromInput.value || !els.toInput.value) return [];
-
-  const from = new Date(`${els.fromInput.value}T12:00:00`);
-  const to = new Date(`${els.toInput.value}T12:00:00`);
-  if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) return [];
-
-  const results = [];
-  for (let cursor = new Date(from); cursor <= to; cursor.setDate(cursor.getDate() + 1)) {
-    const parts = localDatePartsInZone(cursor, resource.timeZone);
-    const weekday = weekdayMap(parts.weekdayShort);
-    const localDateString = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
-    if ((resource.blackoutDates || []).includes(localDateString)) continue;
-
-    const windows = resource.weeklyHours?.[weekday] || [];
-    for (const [startStr, endStr] of windows) {
-      const dayStartMinute = toMinutes(startStr);
-      const dayEndMinute = toMinutes(endStr);
-      for (let slotStartMinute = dayStartMinute; slotStartMinute + service.durationMinutes <= dayEndMinute; slotStartMinute += service.slotStepMinutes) {
-        const slotEndMinute = slotStartMinute + service.durationMinutes;
-        if (isWithinBreak(resource, weekday, slotStartMinute, slotEndMinute)) continue;
-
-        const startHour = Math.floor(slotStartMinute / 60);
-        const startMinute = slotStartMinute % 60;
-        const endHour = Math.floor(slotEndMinute / 60);
-        const endMinute = slotEndMinute % 60;
-
-        if (els.showMorningOnly.checked && !isMorning(startHour)) continue;
-        if (els.showEveningOnly.checked && !isEvening(startHour)) continue;
-
-        const startsAt = zonedDateToUtcIso({ ...parts, hour: startHour, minute: startMinute }, resource.timeZone);
-        const endsAt = zonedDateToUtcIso({ ...parts, hour: endHour, minute: endMinute }, resource.timeZone);
-        const occupancyEndsAt = addMinutesIso(endsAt, service.bufferAfterMinutes);
-
-        const now = new Date();
-        if (new Date(startsAt) < now) continue;
-
-        const blocked = state.appointments.some((appointment) => {
-          if (appointment.resourceId !== resource.id || appointment.status !== "CONFIRMED") return false;
-          if (options.excludeAppointmentId && appointment.id === options.excludeAppointmentId) return false;
-          return overlaps(
-            new Date(startsAt).getTime(),
-            new Date(occupancyEndsAt).getTime(),
-            new Date(appointment.startsAt).getTime(),
-            new Date(appointment.occupancyEndsAt).getTime(),
-          );
-        });
-
-        if (!blocked) {
-          results.push({
-            resourceId: resource.id,
-            serviceId: service.id,
-            startsAt,
-            endsAt,
-            occupancyEndsAt,
-            localDateString,
-            timeZone: resource.timeZone,
-          });
-        }
-      }
-    }
-  }
-
-  return results.sort((left, right) => new Date(left.startsAt) - new Date(right.startsAt));
-}
-
-function formatDateRange(startIso, endIso, timeZone = undefined) {
-  const formatter = new Intl.DateTimeFormat("pl-PL", {
-    timeZone,
-    weekday: "short",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-  return `${formatter.format(new Date(startIso))} → ${formatter.format(new Date(endIso))}`;
-}
-
-function formatSlotMeta(startIso, timeZone) {
-  const date = new Date(startIso);
-  return {
-    day: new Intl.DateTimeFormat("pl-PL", {
-      timeZone,
-      weekday: "long",
-      day: "2-digit",
-      month: "long",
-    }).format(date),
-    shortDay: new Intl.DateTimeFormat("pl-PL", {
-      timeZone,
-      weekday: "short",
-      day: "2-digit",
-      month: "2-digit",
-    }).format(date),
-    time: new Intl.DateTimeFormat("pl-PL", {
-      timeZone,
-      hour: "2-digit",
-      minute: "2-digit",
-    }).format(date),
-  };
-}
-
 function announce(message, kind = "muted") {
   els.bookingStatus.textContent = message;
   els.bookingStatus.className = `status-line ${kind}`;
@@ -494,15 +326,19 @@ function renderServiceCards() {
   const template = document.getElementById("serviceCardTemplate");
   state.services.forEach((service) => {
     const node = template.content.firstElementChild.cloneNode(true);
-    node.classList.toggle("active", service.id === state.selectedServiceId);
-    node.innerHTML = `
-      <span class="title">${service.name}</span>
-      <span class="desc">${service.category} • ${service.durationMinutes} min • po wizycie ${service.bufferAfterMinutes} min bufora</span>
-      <span class="meta-row">
-        <span class="choice-chip">${service.price} zł</span>
-        <span class="choice-chip">krok ${service.slotStepMinutes} min</span>
-      </span>
-    `;
+    const active = service.id === state.selectedServiceId;
+    node.classList.toggle("active", active);
+    node.setAttribute("aria-pressed", String(active));
+    const meta = el("span", "meta-row");
+    meta.append(
+      el("span", "choice-chip", `${service.price} zł`),
+      el("span", "choice-chip", `krok ${service.slotStepMinutes} min`),
+    );
+    node.append(
+      el("span", "title", service.name),
+      el("span", "desc", `${service.category} • ${service.durationMinutes} min • po wizycie ${service.bufferAfterMinutes} min bufora`),
+      meta,
+    );
     node.addEventListener("click", () => {
       state.selectedServiceId = service.id;
       state.selectedSlot = null;
@@ -518,15 +354,19 @@ function renderResourceCards() {
   const template = document.getElementById("resourceCardTemplate");
   state.resources.forEach((resource) => {
     const node = template.content.firstElementChild.cloneNode(true);
-    node.classList.toggle("active", resource.id === state.selectedResourceId);
-    node.innerHTML = `
-      <span class="title">${resource.name}</span>
-      <span class="desc">${resource.role} • ${resource.locationName}</span>
-      <span class="meta-row">
-        <span class="choice-chip">${resource.timeZone}</span>
-        <span class="choice-chip">${resource.notes}</span>
-      </span>
-    `;
+    const active = resource.id === state.selectedResourceId;
+    node.classList.toggle("active", active);
+    node.setAttribute("aria-pressed", String(active));
+    const meta = el("span", "meta-row");
+    meta.append(
+      el("span", "choice-chip", resource.timeZone),
+      el("span", "choice-chip", resource.notes),
+    );
+    node.append(
+      el("span", "title", resource.name),
+      el("span", "desc", `${resource.role} • ${resource.locationName}`),
+      meta,
+    );
     node.addEventListener("click", () => {
       state.selectedResourceId = resource.id;
       state.selectedSlot = null;
@@ -589,14 +429,14 @@ function renderAvailability() {
   els.availabilityBoard.innerHTML = "";
 
   if (!resource || !service) {
-    els.availabilityBoard.innerHTML = '<div class="empty-state">Brakuje specjalisty albo usługi.</div>';
+    els.availabilityBoard.appendChild(emptyState("Brakuje specjalisty albo usługi."));
     return;
   }
 
   const from = new Date(`${els.fromInput.value}T12:00:00`);
   const to = new Date(`${els.toInput.value}T12:00:00`);
   if (Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) || from > to) {
-    els.availabilityBoard.innerHTML = '<div class="empty-state">Zakres dat jest niepoprawny.</div>';
+    els.availabilityBoard.appendChild(emptyState("Zakres dat jest niepoprawny."));
     return;
   }
 
@@ -608,9 +448,8 @@ function renderAvailability() {
   });
 
   const template = document.getElementById("dayColumnTemplate");
-  let anyColumn = false;
+  const slotTemplate = document.getElementById("slotTemplate");
   for (let cursor = new Date(from); cursor <= to; cursor.setDate(cursor.getDate() + 1)) {
-    anyColumn = true;
     const parts = localDatePartsInZone(cursor, resource.timeZone);
     const dayKey = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
     const column = template.content.firstElementChild.cloneNode(true);
@@ -621,34 +460,44 @@ function renderAvailability() {
       month: "long",
     }).format(cursor);
     const slots = grouped.get(dayKey) || [];
-    column.querySelector(".day-meta").textContent = `${slots.length} wolnych slotów`;
+    const freeCount = slots.filter((slot) => !slot.blocked).length;
+    column.querySelector(".day-meta").textContent = `${freeCount} wolnych slotów`;
     const daySlots = column.querySelector(".day-slots");
 
     if (!slots.length) {
-      const empty = document.createElement("div");
-      empty.className = "empty-state";
-      empty.textContent = "Brak dostępności albo wszystko zajęte.";
-      daySlots.appendChild(empty);
+      daySlots.appendChild(emptyState("Brak dostępności albo wszystko zajęte."));
     } else {
-      const slotTemplate = document.getElementById("slotTemplate");
       slots.forEach((slot) => {
         const chip = slotTemplate.content.firstElementChild.cloneNode(true);
         const meta = formatSlotMeta(slot.startsAt, resource.timeZone);
-        chip.classList.toggle("selected", state.selectedSlot?.startsAt === slot.startsAt && state.selectedSlot?.resourceId === slot.resourceId);
-        chip.innerHTML = `<span class="slot-time">${meta.time}</span><span class="slot-meta">${service.durationMinutes} min</span>`;
-        chip.addEventListener("click", () => selectSlot(slot));
+        chip.append(
+          el("span", "slot-time", meta.time),
+          el("span", "slot-meta", `${service.durationMinutes} min`),
+        );
+        if (slot.blocked) {
+          chip.classList.add("blocked");
+          chip.disabled = true;
+          chip.setAttribute("aria-disabled", "true");
+          chip.title = "Termin zajęty";
+        } else {
+          const selected = state.selectedSlot?.startsAt === slot.startsAt && state.selectedSlot?.resourceId === slot.resourceId;
+          chip.classList.toggle("selected", selected);
+          chip.setAttribute("aria-pressed", String(selected));
+          chip.addEventListener("click", () => selectSlot(slot));
+        }
         daySlots.appendChild(chip);
       });
     }
     els.availabilityBoard.appendChild(column);
   }
+}
 
-  if (!anyColumn) {
-    els.availabilityBoard.innerHTML = '<div class="empty-state">Brak kolumn do pokazania.</div>';
-  }
+function emptyState(message) {
+  return el("div", "empty-state", message);
 }
 
 function selectSlot(slot) {
+  if (slot.blocked) return;
   state.selectedSlot = slot;
   const resource = getSelectedResource();
   els.selectedSlotLabel.textContent = formatDateRange(slot.startsAt, slot.endsAt, resource?.timeZone);
@@ -662,7 +511,13 @@ function rerenderAll() {
   renderServiceCards();
   renderResourceCards();
   state.availability = computeAvailability(getSelectedService(), getSelectedResource(), {
+    from: els.fromInput.value,
+    to: els.toInput.value,
+    appointments: state.appointments,
+    morningOnly: els.showMorningOnly.checked,
+    eveningOnly: els.showEveningOnly.checked,
     excludeAppointmentId: state.rescheduleAppointmentId,
+    includeBlocked: true,
   });
   const service = getSelectedService();
   const resource = getSelectedResource();
@@ -994,13 +849,11 @@ function tryPromoteWaitlist(resourceId, serviceId) {
     const resource = state.resources.find((item) => item.id === entry.resourceId);
     if (!service || !resource) continue;
 
-    const previousFrom = els.fromInput.value;
-    const previousTo = els.toInput.value;
-    els.fromInput.value = entry.desiredFrom;
-    els.toInput.value = entry.desiredTo;
-    const freeSlots = computeAvailability(service, resource);
-    els.fromInput.value = previousFrom;
-    els.toInput.value = previousTo;
+    const freeSlots = computeAvailability(service, resource, {
+      from: entry.desiredFrom,
+      to: entry.desiredTo,
+      appointments: state.appointments,
+    });
 
     const chosen = freeSlots[0];
     if (!chosen) continue;
@@ -1056,11 +909,11 @@ function renderBookings() {
   const items = currentCustomerAppointments();
   els.appointmentsContainer.innerHTML = "";
   if (!els.lookupEmailInput.value.trim()) {
-    els.appointmentsContainer.innerHTML = '<div class="empty-state">Wpisz e-mail i kliknij pobierz, żeby zobaczyć swoje rezerwacje.</div>';
+    els.appointmentsContainer.appendChild(emptyState("Wpisz e-mail i kliknij pobierz, żeby zobaczyć swoje rezerwacje."));
     return;
   }
   if (!items.length) {
-    els.appointmentsContainer.innerHTML = '<div class="empty-state">Brak pasujących rezerwacji dla tego filtra.</div>';
+    els.appointmentsContainer.appendChild(emptyState("Brak pasujących rezerwacji dla tego filtra."));
     return;
   }
 
@@ -1096,11 +949,11 @@ function renderWaitlist() {
   let items = state.waitlist;
   if (lookup) items = items.filter((item) => item.customerEmail.toLowerCase() === lookup);
   if (!items.length) {
-    els.waitlistContainer.innerHTML = '<div class="empty-state">Brak wpisów na liście oczekujących.</div>';
+    els.waitlistContainer.appendChild(emptyState("Brak wpisów na liście oczekujących."));
     return;
   }
   const template = document.getElementById("waitlistTemplate");
-  items.sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt)).forEach((item) => {
+  [...items].sort((left, right) => new Date(right.createdAt) - new Date(left.createdAt)).forEach((item) => {
     const node = template.content.firstElementChild.cloneNode(true);
     const service = state.services.find((serviceItem) => serviceItem.id === item.serviceId);
     const resource = state.resources.find((resourceItem) => resourceItem.id === item.resourceId);
@@ -1117,7 +970,7 @@ function renderWaitlist() {
 function renderMailbox() {
   els.mailboxContainer.innerHTML = "";
   if (!state.mailbox.length) {
-    els.mailboxContainer.innerHTML = '<div class="empty-state">Jeszcze nic nie wpadło do outboxa.</div>';
+    els.mailboxContainer.appendChild(emptyState("Jeszcze nic nie wpadło do outboxa."));
     return;
   }
   const template = document.getElementById("mailTemplate");
@@ -1153,38 +1006,45 @@ function renderOpsSummary() {
   ];
   els.opsSummary.innerHTML = "";
   tiles.forEach(([label, value, help]) => {
-    const tile = document.createElement("article");
-    tile.className = "ops-tile";
-    tile.innerHTML = `<span class="muted">${label}</span><strong>${value}</strong><p class="muted small">${help}</p>`;
+    const tile = el("article", "ops-tile");
+    tile.append(
+      el("span", "muted", label),
+      el("strong", null, String(value)),
+      el("p", "muted small", help),
+    );
     els.opsSummary.appendChild(tile);
   });
 }
 
 function renderResourceLoadBoard() {
   els.resourceLoadBoard.innerHTML = "";
-  const previousFrom = els.fromInput.value;
-  const previousTo = els.toInput.value;
+  const service = getSelectedService();
   state.resources.forEach((resource) => {
-    const service = getSelectedService();
-    const free = computeAvailability(service, resource).length;
-    els.fromInput.value = previousFrom;
-    els.toInput.value = previousTo;
+    const free = computeAvailability(service, resource, {
+      from: els.fromInput.value,
+      to: els.toInput.value,
+      appointments: state.appointments,
+    }).length;
     const booked = state.appointments.filter((appointment) => appointment.resourceId === resource.id && appointment.status === "CONFIRMED").length;
     const total = free + booked;
     const fillPercent = total ? Math.round((booked / total) * 100) : 0;
-    const row = document.createElement("article");
-    row.className = "load-row";
-    row.innerHTML = `
-      <div class="load-main">
-        <strong>${resource.name}</strong>
-        <p class="muted small">${resource.role} • ${resource.timeZone} • ${booked} aktywnych wizyt</p>
-        <div class="load-bar-track"><div class="load-bar-fill" style="width:${fillPercent}%"></div></div>
-      </div>
-      <div>
-        <strong>${fillPercent}%</strong>
-        <p class="muted small">obłożenia</p>
-      </div>
-    `;
+
+    const row = el("article", "load-row");
+    const main = el("div", "load-main");
+    main.append(
+      el("strong", null, resource.name),
+      el("p", "muted small", `${resource.role} • ${resource.timeZone} • ${booked} aktywnych wizyt`),
+    );
+    const track = el("div", "load-bar-track");
+    const fill = el("div", "load-bar-fill");
+    fill.style.width = `${fillPercent}%`;
+    track.appendChild(fill);
+    main.appendChild(track);
+
+    const side = el("div");
+    side.append(el("strong", null, `${fillPercent}%`), el("p", "muted small", "obłożenia"));
+
+    row.append(main, side);
     els.resourceLoadBoard.appendChild(row);
   });
 }
@@ -1197,13 +1057,12 @@ function renderServicePopularity() {
   }));
   const max = Math.max(1, ...counts.map((item) => item.count));
   counts.forEach(({ service, count }) => {
-    const row = document.createElement("div");
-    row.className = "bar-item";
-    row.innerHTML = `
-      <strong>${service.name}</strong>
-      <div class="bar-track"><div class="bar-fill" style="width:${Math.round((count / max) * 100)}%"></div></div>
-      <span class="muted">${count}</span>
-    `;
+    const row = el("div", "bar-item");
+    const track = el("div", "bar-track");
+    const fill = el("div", "bar-fill");
+    fill.style.width = `${Math.round((count / max) * 100)}%`;
+    track.appendChild(fill);
+    row.append(el("strong", null, service.name), track, el("span", "muted", String(count)));
     els.servicePopularity.appendChild(row);
   });
 }
@@ -1214,7 +1073,12 @@ function setActiveTab(tab) {
 }
 
 function syncTabVisibility() {
-  els.tabButtons.forEach((button) => button.classList.toggle("active", button.dataset.tab === state.activeTab));
+  els.tabButtons.forEach((button) => {
+    const active = button.dataset.tab === state.activeTab;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-selected", String(active));
+    button.tabIndex = active ? 0 : -1;
+  });
   els.tabPanels.forEach((panel) => panel.classList.toggle("active", panel.dataset.panel === state.activeTab));
 }
 
@@ -1250,6 +1114,25 @@ function exportData() {
   URL.revokeObjectURL(url);
 }
 
+function importData(file) {
+  const reader = new FileReader();
+  reader.onload = () => {
+    try {
+      const parsed = JSON.parse(String(reader.result));
+      const source = parsed && typeof parsed === "object" && parsed.data ? parsed.data : parsed;
+      if (!source || typeof source !== "object") throw new Error("Nieprawidłowa struktura");
+      persist(normalizeData(source));
+      clearRescheduleMode();
+      announce("Zaimportowałem dane z pliku JSON.", "badge success");
+      rerenderAll();
+    } catch {
+      announce("Nie udało się wczytać pliku — to nie jest poprawny JSON eksportu.", "muted");
+    }
+  };
+  reader.onerror = () => announce("Nie udało się odczytać pliku.", "muted");
+  reader.readAsText(file);
+}
+
 function resetAllData() {
   if (!confirm("Na pewno chcesz zresetować całe demo?")) return;
   const demo = buildSeedWithDemoData();
@@ -1265,7 +1148,10 @@ function bindEvents() {
     announce("Przeliczyłem dostępność.", "muted");
     rerenderAll();
   });
-  els.bookBtn.addEventListener("click", handlePrimaryAction);
+  els.bookingForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    handlePrimaryAction();
+  });
   els.waitlistBtn.addEventListener("click", addToWaitlist);
   els.clearModeBtn.addEventListener("click", () => {
     clearRescheduleMode();
@@ -1276,10 +1162,20 @@ function bindEvents() {
   els.themeToggleBtn.addEventListener("click", () => setTheme(document.body.classList.contains("light") ? "dark" : "light"));
   els.resetDataBtn.addEventListener("click", resetAllData);
   els.exportDataBtn.addEventListener("click", exportData);
+  els.importDataBtn.addEventListener("click", () => els.importFileInput.click());
+  els.importFileInput.addEventListener("change", (event) => {
+    const [file] = event.target.files;
+    if (file) importData(file);
+    event.target.value = "";
+  });
   els.rangePills.forEach((button) => {
     button.addEventListener("click", () => {
-      els.rangePills.forEach((item) => item.classList.remove("active"));
+      els.rangePills.forEach((item) => {
+        item.classList.remove("active");
+        item.setAttribute("aria-pressed", "false");
+      });
       button.classList.add("active");
+      button.setAttribute("aria-pressed", "true");
       setDefaultDates(Number(button.dataset.range || 7));
       rerenderAll();
     });
@@ -1287,12 +1183,24 @@ function bindEvents() {
   els.filterButtons.forEach((button) => {
     button.addEventListener("click", () => {
       state.bookingFilter = button.dataset.filter;
-      els.filterButtons.forEach((item) => item.classList.toggle("active", item === button));
+      els.filterButtons.forEach((item) => {
+        const active = item === button;
+        item.classList.toggle("active", active);
+        item.setAttribute("aria-pressed", String(active));
+      });
       renderBookings();
     });
   });
-  els.tabButtons.forEach((button) => {
+  els.tabButtons.forEach((button, index) => {
     button.addEventListener("click", () => setActiveTab(button.dataset.tab));
+    button.addEventListener("keydown", (event) => {
+      if (event.key !== "ArrowRight" && event.key !== "ArrowLeft") return;
+      event.preventDefault();
+      const direction = event.key === "ArrowRight" ? 1 : -1;
+      const next = els.tabButtons[(index + direction + els.tabButtons.length) % els.tabButtons.length];
+      next.focus();
+      setActiveTab(next.dataset.tab);
+    });
   });
   [els.fromInput, els.toInput, els.showMorningOnly, els.showEveningOnly].forEach((element) => {
     element.addEventListener("change", () => {
