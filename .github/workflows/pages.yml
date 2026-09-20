@@ -1,0 +1,41 @@
+name: Deploy na GitHub Pages
+
+# Aplikacja jest statyczna i nie ma kroku budowania — publikujemy
+# bezpośrednio pliki źródłowe przeglądarki.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Przygotuj katalog do publikacji
+        # Kopiujemy tylko to, co przeglądarka faktycznie pobiera. Publikowanie
+        # całego repozytorium wystawiłoby także package.json, testy
+        # i konfigurację — bez żadnego pożytku dla odwiedzającego.
+        run: |
+          mkdir -p _site
+          cp index.html styles.css app.js availability.js dateUtils.js _site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
