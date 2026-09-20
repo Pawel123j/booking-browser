@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Testy jednostkowe
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Instalacja zależności
+        run: npm ci
+
+      - name: Testy
+        run: npm test
+
+      - name: Audyt zależności
+        # Próg na `high`, a nie `low`: przy niższym pierwszy nowy komunikat
+        # o podatności w zależności deweloperskiej zapalałby CI na czerwono
+        # na commicie, którego nikt nie dotykał.
+        run: npm audit --audit-level=high
+
+  syntax:
+    name: Składnia modułów przeglądarkowych
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Sprawdź, czy moduły się parsują
+        # app.js nie ma testów jednostkowych, bo dotyka DOM-u. Ten krok nie
+        # udaje, że je ma — sprawdza tylko to, co da się sprawdzić bez
+        # przeglądarki: czy pliki są poprawnym JavaScriptem. Literówka
+        # składniowa w app.js zepsułaby całą aplikację, a bez tego kroku
+        # wyszłaby dopiero po otwarciu strony.
+        run: |
+          for f in app.js availability.js dateUtils.js; do
+            node --check "$f" && echo "OK: $f"
+          done
