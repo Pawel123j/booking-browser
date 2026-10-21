@@ -127,3 +127,28 @@ odwiedzającego nie ma z niej pożytku.
 ## Licencja
 
 MIT — patrz [LICENSE](LICENSE).
+
+## Weryfikacja środowiska — 2026-10-17
+
+`npm test`: 23 testy PASS. Nowy test Chromium w `e2e/` sprawdza wybór terminu, rezerwację, wyszukanie po e-mailu, trwałość po odświeżeniu i anulowanie. CI uruchamia go bez backendu. Audyt npm po aktualizacji lockfile nie zgłosił podatności (stan z daty weryfikacji).
+
+To demo lokalne, a nie współdzielony system rezerwacji. E-mail jest filtrem lokalnych danych, nie uwierzytelnieniem. Nie wpisuj rzeczywistych danych klientów do publicznego stanowiska demo. Wdrożenia hostingu nie sprawdzono; aktualizacja i rollback obejmują statyczne pliki, bez usuwania localStorage użytkownika.
+
+
+### Testy przeglądarkowe
+
+Po zainstalowaniu zależności aplikacji i zbudowaniu frontendu zgodnie z README / workflow `browser.yml` (lub jobem browser w `ci.yml`):
+
+```bash
+python -m venv .venv-e2e
+# Aktywuj ten venv przed dalszymi poleceniami.
+python -m pip install -r e2e/requirements.txt
+python -m playwright install chromium
+python -m pytest -q e2e
+```
+
+Na Linux może być potrzebne `python -m playwright install --with-deps chromium` z uprawnieniami administratora. Alternatywnie `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` wskazuje istniejący Chromium. Testy uruchamiają i zatrzymują własny serwer, używają nowego kontekstu przeglądarki i zapisują logi w ignorowanym `e2e/artifacts/`. Pełny backend musi mieć zainstalowane swoje zależności; `E2E_API_PYTHON` jest opcjonalnym wyborem jego interpretera w AutoDesk/BankGuard. Testy nie uruchamiają wdrożenia.
+
+## Walidacja etapu 2 — 2026-10-18
+
+E2E obejmuje teraz rezerwację, reload, zmianę terminu, eksport JSON, reset własnego stanu testowego, import i anulowanie. Osobny test sprawdza klawiaturę zakładek i przełącznika motywu, układ 390 px oraz axe WCAG 2 A/AA i 2.1 AA w jasnym/ciemnym motywie. `npm ci`, 23 regresje, 2 E2E oraz audit 0 potwierdzono lokalnie. Testy używają izolowanego profilu przeglądarki; nie czyszczą danych użytkownika. Zakres to lokalne demo rezerwacji, bez synchronizacji między urządzeniami.

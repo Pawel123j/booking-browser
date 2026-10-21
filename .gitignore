@@ -2,3 +2,9 @@ node_modules/
 coverage/
 *.log
 .DS_Store
+
+e2e/artifacts/
+e2e/__pycache__/
+.pytest_cache/
+
+.venv-e2e/
