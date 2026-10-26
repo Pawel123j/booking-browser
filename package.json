@@ -1,7 +1,7 @@
 {
   "name": "bookingflow-studio",
   "version": "1.0.0",
-  "description": "Przegl\u0105darkowe demo rezerwacji wizyt (bez backendu) z obs\u0142ug\u0105 stref czasowych, konflikt\u00f3w i listy oczekuj\u0105cych.",
+  "description": "Przeglądarkowe demo rezerwacji wizyt (bez backendu) z obsługą stref czasowych, konfliktów i listy oczekujących.",
   "private": true,
   "type": "module",
   "scripts": {
@@ -9,7 +9,8 @@
     "test:watch": "vitest"
   },
   "devDependencies": {
-    "vitest": "^5.0.1",
-    "axe-core": "4.11.1"
+    "axe-core": "4.11.1",
+    "jsdom": "30.1.3",
+    "vitest": "5.0.5"
   }
 }
