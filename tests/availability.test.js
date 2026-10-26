@@ -17,6 +17,23 @@ const TO = "2026-07-06";
 const NOW = new Date("2026-01-01T00:00:00.000Z");
 
 describe("computeAvailability", () => {
+  it.each(["Europe/Warsaw", "Europe/London"])("keeps DST transition slots unique, real and of the advertised duration in %s", (timeZone) => {
+    const sunday = { ...resource, timeZone, weeklyHours: { 0: [["00:00", "05:00"]] }, breakHours: {} };
+    for (const date of ["2026-03-29", "2026-10-25"]) {
+      const slots = computeAvailability(service, sunday, { from: date, to: date, now: new Date("2026-01-01") });
+      expect(slots.length).toBeGreaterThan(0);
+      expect(new Set(slots.map((slot) => slot.startsAt)).size).toBe(slots.length);
+      for (const slot of slots) {
+        expect(Date.parse(slot.endsAt) - Date.parse(slot.startsAt)).toBe(service.durationMinutes * 60_000);
+        const wall = new Intl.DateTimeFormat("en-GB", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(slot.startsAt));
+        if (date === "2026-03-29") expect(wall.startsWith(timeZone === "Europe/Warsaw" ? "02:" : "01:")).toBe(false);
+      }
+      const occupied = [{ ...slots[0], id: "dst-booking", status: "CONFIRMED" }];
+      const available = computeAvailability(service, sunday, { from: date, to: date, now: new Date("2026-01-01"), appointments: occupied });
+      expect(available.some((slot) => slot.startsAt === slots[0].startsAt)).toBe(false);
+    }
+  });
+
   it("generates step-based slots and respects breaks", () => {
     const slots = computeAvailability(service, resource, { from: FROM, to: TO, now: NOW });
     // 09:00, 09:15, 09:30, 10:15, 10:30 — the 09:45 and 10:00 slots collide with the break.

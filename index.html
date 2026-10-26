@@ -30,6 +30,15 @@
         </div>
       </header>
 
+      <section id="storageWarning" class="card glass" hidden aria-label="Stan zapisu danych">
+        <p id="storageStatus" role="status" aria-live="polite"></p>
+        <div class="toolbar wrap">
+          <button id="exportOriginalBtn" type="button" class="ghost">Pobierz oryginalny zapis</button>
+          <button id="retryStorageBtn" type="button" class="ghost">Ponów zapis danych</button>
+          <button id="reloadStorageBtn" type="button" class="ghost">Wczytaj zapis ponownie</button>
+        </div>
+      </section>
+
       <section class="stats-grid" id="statsGrid"></section>
 
       <main class="layout">

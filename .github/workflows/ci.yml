@@ -41,12 +41,8 @@ jobs:
           node-version: 24
 
       - name: Sprawdź, czy moduły się parsują
-        # app.js nie ma testów jednostkowych, bo dotyka DOM-u. Ten krok nie
-        # udaje, że je ma — sprawdza tylko to, co da się sprawdzić bez
-        # przeglądarki: czy pliki są poprawnym JavaScriptem. Literówka
-        # składniowa w app.js zepsułaby całą aplikację, a bez tego kroku
-        # wyszłaby dopiero po otwarciu strony.
+        # Dodatkowa kontrola składni wszystkich publikowanych modułów.
         run: |
-          for f in app.js availability.js dateUtils.js; do
+          for f in app.js availability.js dateUtils.js storage.js; do
             node --check "$f" && echo "OK: $f"
           done
