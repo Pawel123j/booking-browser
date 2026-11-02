@@ -14,22 +14,21 @@
       <header class="hero card glass">
         <div>
           <p class="eyebrow">BookingFlow Studio</p>
-          <h1>Rezerwacje wizyt bez backendu, ale jak człowiek</h1>
+          <h1>Zarezerwuj wizytę w dogodnym terminie</h1>
           <p class="hero-copy">
-            Rozbudowana aplikacja przeglądarkowa do portfolio: sloty, blokada konfliktów,
-            przenoszenie wizyt, lista oczekujących, strefy czasowe, symulacja maili,
-            statystyki i panel operacyjny.
+            Wybierz usługę, specjalistę i wolną godzinę. Demo — dane zapisują się lokalnie w tej przeglądarce.
           </p>
         </div>
         <div class="hero-actions">
           <button id="themeToggleBtn" type="button" class="ghost">🌗 Motyw</button>
-          <button id="exportDataBtn" type="button" class="ghost">⬇️ Eksport JSON</button>
+          <details><summary>Narzędzia danych</summary><button id="exportDataBtn" type="button" class="ghost">⬇️ Eksport JSON</button>
           <button id="importDataBtn" type="button" class="ghost">⬆️ Import JSON</button>
           <input id="importFileInput" type="file" accept="application/json,.json" class="visually-hidden" aria-hidden="true" tabindex="-1" />
-          <button id="resetDataBtn" type="button" class="danger">Reset demo</button>
+          <button id="resetDataBtn" type="button" class="danger">Reset demo</button></details>
         </div>
       </header>
 
+      <div role="status" aria-live="polite"><p id="storageStatus"></p><button id="retrySaveBtn" hidden>Ponów zapis</button><button id="recoverDataBtn" hidden>Pobierz uszkodzony zapis</button></div>
       <section class="stats-grid" id="statsGrid"></section>
 
       <main class="layout">
@@ -87,6 +86,22 @@
           <section class="card glass stack gap-sm">
             <div class="section-top">
               <div>
+                <p class="section-kicker">Terminy</p>
+                <h2>Dostępność tygodniowa</h2>
+              </div>
+              <div class="legend-row">
+                <span class="legend-pill available">Wolny</span>
+                <span class="legend-pill selected">Wybrany</span>
+                <span class="legend-pill blocked">Zajęty</span>
+              </div>
+            </div>
+            <label class="day-picker">Wybierz dzień<select id="daySelect"></select></label>
+            <div id="availabilityBoard" class="availability-board"></div>
+          </section>
+
+          <section class="card glass stack gap-sm">
+            <div class="section-top">
+              <div>
                 <p class="section-kicker">Krok 3</p>
                 <h2>Rezerwacja / przełożenie</h2>
               </div>
@@ -95,7 +110,7 @@
             <div class="selected-slot-box">
               <span class="muted">Wybrany termin</span>
               <strong id="selectedSlotLabel">brak</strong>
-              <p id="selectedSlotSubtext" class="muted small">Wybierz slot z widoku po prawej.</p>
+              <p id="selectedSlotSubtext" class="muted small">Wybierz dzień i wolną godzinę w sekcji terminów.</p>
             </div>
             <form id="bookingForm" novalidate>
               <div class="form-grid">
@@ -135,20 +150,7 @@
         </aside>
 
         <section class="content stack">
-          <section class="card glass stack gap-sm">
-            <div class="section-top">
-              <div>
-                <p class="section-kicker">Terminy</p>
-                <h2>Dostępność tygodniowa</h2>
-              </div>
-              <div class="legend-row">
-                <span class="legend-pill available">Wolny</span>
-                <span class="legend-pill selected">Wybrany</span>
-                <span class="legend-pill blocked">Zajęty</span>
-              </div>
-            </div>
-            <div id="availabilityBoard" class="availability-board"></div>
-          </section>
+
 
           <section class="tabs">
             <div class="tab-buttons" role="tablist" aria-label="Widoki">
