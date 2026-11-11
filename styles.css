@@ -494,3 +494,13 @@ body.light .mail-body { background: rgba(248,250,252,0.95); }
     transform: none;
   }
 }
+
+/* One day at a time keeps the booking sequence usable on narrow screens. */
+.day-picker { display: grid; gap: .5rem; }
+.availability-board { display: block; }
+.availability-board .inactive-day { display: none; }
+.day-slots { display: grid; grid-template-columns: repeat(auto-fill, minmax(85px, 1fr)); max-height: 320px; overflow-y: auto; }
+.hero-actions details > button { margin: .4rem 0; }
+summary { cursor: pointer; padding: .75rem; }
+[hidden] { display: none !important; }
+@media (max-width: 900px) { .layout { display: flex; flex-direction: column; } .sidebar, .content { width: 100%; } .stats-grid { display: none; } }

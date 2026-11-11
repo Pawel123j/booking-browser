@@ -9,6 +9,7 @@ import {
   formatDateRange,
   formatSlotMeta,
 } from "./dateUtils.js";
+import { validateData } from "./dataStore.js";
 import { computeAvailability } from "./availability.js";
 
 const STORAGE_KEY = "bookingflow-studio-v1";
@@ -136,9 +137,28 @@ function structuredSeed() {
   return JSON.parse(JSON.stringify(seed));
 }
 
-function persist(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  channel?.postMessage({ type: "sync" });
+let memoryData = null;
+let unsaved = false;
+let recoveryRaw = null;
+function storageStatus(message = "") {
+  document.getElementById("storageStatus").textContent = message;
+  document.getElementById("retrySaveBtn").hidden = !unsaved;
+  document.getElementById("recoverDataBtn").hidden = recoveryRaw === null;
+}
+function persist(data, requireDurable = false) {
+  const snapshot = { ...data, schemaVersion: 1 };
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
+    memoryData = snapshot;
+    unsaved = false;
+    storageStatus(recoveryRaw === null ? "" : "Oryginalny uszkodzony zapis możesz pobrać do odzyskania.");
+    channel?.postMessage({ type: "sync" });
+    return true;
+  } catch {
+    if (!requireDurable) { memoryData = snapshot; unsaved = true; }
+    storageStatus("Nie zapisano zmian. Dane działają w tej karcie; pobierz eksport przed zamknięciem lub ponów zapis.");
+    return false;
+  }
 }
 
 function buildSeedWithDemoData() {
@@ -223,29 +243,22 @@ function buildSeedWithDemoData() {
   return demo;
 }
 
-function normalizeData(parsed) {
-  return {
-    services: Array.isArray(parsed.services) && parsed.services.length ? parsed.services : structuredSeed().services,
-    resources: Array.isArray(parsed.resources) && parsed.resources.length ? parsed.resources : structuredSeed().resources,
-    appointments: Array.isArray(parsed.appointments) ? parsed.appointments : [],
-    waitlist: Array.isArray(parsed.waitlist) ? parsed.waitlist : [],
-    mailbox: Array.isArray(parsed.mailbox) ? parsed.mailbox : [],
-  };
-}
-
 function loadData() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    const demo = buildSeedWithDemoData();
-    persist(demo);
-    return demo;
-  }
+  if (unsaved && memoryData) return memoryData;
   try {
-    return normalizeData(JSON.parse(raw));
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) {
+      try { memoryData = validateData(JSON.parse(raw)); return memoryData; }
+      catch { recoveryRaw = raw; unsaved = true; memoryData ??= buildSeedWithDemoData(); storageStatus("Zapis jest uszkodzony. Oryginał zachowano; pobierz go przed ponownym zapisem. Pracujesz na danych tymczasowych."); return memoryData; }
+    }
+    memoryData ??= buildSeedWithDemoData();
+    persist(memoryData);
+    return memoryData;
   } catch {
-    const demo = buildSeedWithDemoData();
-    persist(demo);
-    return demo;
+    memoryData ??= buildSeedWithDemoData();
+    unsaved = true;
+    storageStatus("Pamięć przeglądarki jest niedostępna. Zmiany pozostają w tej karcie; pobierz eksport przed zamknięciem.");
+    return memoryData;
   }
 }
 
@@ -284,11 +297,11 @@ function setDefaultDates(days = 7) {
 function setTheme(theme) {
   const isLight = theme === "light";
   document.body.classList.toggle("light", isLight);
-  localStorage.setItem(THEME_KEY, isLight ? "light" : "dark");
+  try { localStorage.setItem(THEME_KEY, isLight ? "light" : "dark"); } catch { /* Theme remains available in memory. */ }
 }
 
 function bootTheme() {
-  setTheme(localStorage.getItem(THEME_KEY) || "dark");
+  try { setTheme(localStorage.getItem(THEME_KEY) || "dark"); } catch { setTheme("dark"); }
 }
 
 function getSelectedService() {
@@ -447,12 +460,18 @@ function renderAvailability() {
     grouped.set(slot.localDateString, list);
   });
 
+  const daySelect = document.getElementById("daySelect");
+  const previousDay = state.selectedSlot?.localDateString || daySelect.value;
+  daySelect.replaceChildren();
   const template = document.getElementById("dayColumnTemplate");
   const slotTemplate = document.getElementById("slotTemplate");
   for (let cursor = new Date(from); cursor <= to; cursor.setDate(cursor.getDate() + 1)) {
     const parts = localDatePartsInZone(cursor, resource.timeZone);
     const dayKey = `${parts.year}-${String(parts.month).padStart(2, "0")}-${String(parts.day).padStart(2, "0")}`;
     const column = template.content.firstElementChild.cloneNode(true);
+    column.dataset.day = dayKey;
+    const option = el("option", "", new Intl.DateTimeFormat("pl-PL", { timeZone: resource.timeZone, weekday: "short", day: "numeric", month: "short" }).format(cursor));
+    option.value = dayKey; daySelect.appendChild(option);
     column.querySelector(".day-title").textContent = new Intl.DateTimeFormat("pl-PL", {
       timeZone: resource.timeZone,
       weekday: "long",
@@ -490,6 +509,10 @@ function renderAvailability() {
     }
     els.availabilityBoard.appendChild(column);
   }
+  daySelect.value = [...daySelect.options].some(option => option.value === previousDay) ? previousDay : (state.availability.find(slot => !slot.blocked)?.localDateString || daySelect.options[0]?.value || "");
+  const showDay = () => [...els.availabilityBoard.children].forEach(column => column.classList.toggle("inactive-day", column.dataset.day !== daySelect.value));
+  daySelect.onchange = showDay;
+  showDay();
 }
 
 function emptyState(message) {
@@ -503,6 +526,7 @@ function selectSlot(slot) {
   els.selectedSlotLabel.textContent = formatDateRange(slot.startsAt, slot.endsAt, resource?.timeZone);
   els.selectedSlotSubtext.textContent = `Specjalista: ${resource?.name || "-"} • strefa: ${resource?.timeZone || "-"}`;
   renderAvailability();
+  if (window.matchMedia("(max-width: 900px)").matches) els.bookingForm.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
 function rerenderAll() {
@@ -707,7 +731,7 @@ function handlePrimaryAction() {
 function clearSelectionAfterBooking() {
   state.selectedSlot = null;
   els.selectedSlotLabel.textContent = "brak";
-  els.selectedSlotSubtext.textContent = "Wybierz slot z widoku po prawej.";
+  els.selectedSlotSubtext.textContent = "Wybierz dzień i wolną godzinę w sekcji terminów.";
   els.notesInput.value = "";
 }
 
@@ -747,7 +771,7 @@ function clearRescheduleMode() {
   state.rescheduleAppointmentId = null;
   state.selectedSlot = null;
   els.selectedSlotLabel.textContent = "brak";
-  els.selectedSlotSubtext.textContent = "Wybierz slot z widoku po prawej.";
+  els.selectedSlotSubtext.textContent = "Wybierz dzień i wolną godzinę w sekcji terminów.";
 }
 
 function updateModeBadge() {
@@ -1096,6 +1120,7 @@ function loadMyBookings() {
 
 function exportData() {
   const payload = {
+    schemaVersion: 1,
     exportedAt: new Date().toISOString(),
     data: {
       services: state.services,
@@ -1121,12 +1146,14 @@ function importData(file) {
       const parsed = JSON.parse(String(reader.result));
       const source = parsed && typeof parsed === "object" && parsed.data ? parsed.data : parsed;
       if (!source || typeof source !== "object") throw new Error("Nieprawidłowa struktura");
-      persist(normalizeData(source));
+      const next = validateData(parsed);
+      if (!confirm(`Import zastąpi dane: ${next.services.length} usług, ${next.resources.length} specjalistów, ${next.appointments.length} rezerwacji, ${next.waitlist.length} wpisów kolejki. Kontynuować?`)) return;
+      if (!persist(next, true)) { announce("Import nie został zapisany. Poprzednie dane zachowano.", "muted"); return; }
       clearRescheduleMode();
       announce("Zaimportowałem dane z pliku JSON.", "badge success");
       rerenderAll();
-    } catch {
-      announce("Nie udało się wczytać pliku — to nie jest poprawny JSON eksportu.", "muted");
+    } catch (error) {
+      announce(`Import odrzucony. Poprzednie dane zachowano. ${error.message}`, "muted");
     }
   };
   reader.onerror = () => announce("Nie udało się odczytać pliku.", "muted");
@@ -1143,6 +1170,14 @@ function resetAllData() {
 }
 
 function bindEvents() {
+  document.getElementById("retrySaveBtn").addEventListener("click", () => {
+    if (recoveryRaw !== null && !confirm("Zapis zastąpi uszkodzone dane. Najpierw pobierz oryginał. Kontynuować?")) return;
+    persist(memoryData);
+  });
+  document.getElementById("recoverDataBtn").addEventListener("click", () => {
+    const url = URL.createObjectURL(new Blob([recoveryRaw], { type: "application/json" }));
+    const anchor = document.createElement("a"); anchor.href = url; anchor.download = "bookingflow-recovery.json"; anchor.click(); URL.revokeObjectURL(url);
+  });
   els.loadSlotsBtn.addEventListener("click", () => {
     state.selectedSlot = null;
     announce("Przeliczyłem dostępność.", "muted");
