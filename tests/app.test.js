@@ -168,6 +168,38 @@ describe("actual application bootstrap and persistence", () => {
     expect(document.getElementById("bookingStatus").textContent).toContain("pamięci");
   });
 
+  it("cancels a valid import without changing the saved or visible dataset", async () => {
+    await start();
+    const original = localStorage.getItem(KEY);
+    const visible = document.getElementById("waitlistContainer").textContent;
+    const replacement = JSON.parse(original);
+    replacement.waitlist = [];
+    vi.mocked(confirm).mockReturnValue(false);
+    importFile(JSON.stringify(replacement));
+    await vi.waitFor(() => expect(confirm).toHaveBeenCalled());
+    expect(localStorage.getItem(KEY)).toBe(original);
+    expect(document.getElementById("waitlistContainer").textContent).toBe(visible);
+  });
+
+  it("keeps the previous import target after a quota failure and retry", async () => {
+    await start();
+    const original = localStorage.getItem(KEY);
+    const visible = document.getElementById("waitlistContainer").textContent;
+    const replacement = JSON.parse(original);
+    replacement.waitlist = [];
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Quota", "QuotaExceededError");
+    });
+    importFile(JSON.stringify(replacement));
+    await vi.waitFor(() => expect(document.getElementById("bookingStatus").textContent).toContain("Import nie został zapisany"));
+    expect(localStorage.getItem(KEY)).toBe(original);
+    expect(document.getElementById("waitlistContainer").textContent).toBe(visible);
+    write.mockRestore();
+    click("retrySaveBtn");
+    expect(localStorage.getItem(KEY)).toBe(original);
+    expect(warning().hidden).toBe(true);
+  });
+
   it("does not replace an existing recovery backup", async () => {
     localStorage.setItem(KEY, "{invalid");
     await start();

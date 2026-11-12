@@ -47,6 +47,15 @@ python -m pytest -q e2e
 
 Set `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` if Chromium is installed outside Playwright's browser directory.
 
+Chromium's sandbox stays enabled. CI uses the Ubuntu runner's system Chrome;
+local containers must permit its sandbox and loopback server to start.
+
+Validation on 2026-11-12: a clean `npm ci`, 56 unit tests, the static build and
+3 browser scenarios on `_site` passed with Node 24.19 and sandboxed Chromium.
+The dependency audit reported zero findings. CI also checks all dependency
+advisories, JavaScript syntax, CodeQL security queries and Git history secrets.
+Remote check results must be verified on the final PR commit before merging.
+
 ## Data and deployment limits
 
 Local email lookup is a convenience for this demo, not identity verification. Do not enter real customer information. Clearing browser storage removes bookings; a successful JSON export is the portable backup. The repository includes a GitHub Pages workflow, but no hosted deployment is verified here.

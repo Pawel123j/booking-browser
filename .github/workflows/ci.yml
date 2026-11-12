@@ -26,10 +26,7 @@ jobs:
         run: npm test
 
       - name: Audyt zależności
-        # Próg na `high`, a nie `low`: przy niższym pierwszy nowy komunikat
-        # o podatności w zależności deweloperskiej zapalałby CI na czerwono
-        # na commicie, którego nikt nie dotykał.
-        run: npm audit --audit-level=high
+        run: npm audit
 
   syntax:
     name: Składnia modułów przeglądarkowych
