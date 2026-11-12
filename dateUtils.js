@@ -54,22 +54,28 @@ export function localDatePartsInZone(date, timeZone) {
   };
 }
 
+// A nonexistent wall-clock time has no UTC instant. During a repeated hour we
+// consistently choose the first occurrence; the UI includes its UTC offset.
 export function zonedDateToUtcIso({ year, month, day, hour, minute }, timeZone) {
-  const utcGuess = new Date(Date.UTC(year, month - 1, day, hour, minute, 0));
-  const local = new Intl.DateTimeFormat("en-CA", {
-    timeZone,
-    hour12: false,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(utcGuess);
-  const got = Object.fromEntries(local.filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
-  const gotMinutes = Date.UTC(Number(got.year), Number(got.month) - 1, Number(got.day), Number(got.hour), Number(got.minute));
-  const wantMinutes = Date.UTC(year, month - 1, day, hour, minute);
-  const diff = wantMinutes - gotMinutes;
-  return new Date(utcGuess.getTime() + diff).toISOString();
+  const wanted = Date.UTC(year, month - 1, day, hour, minute);
+  const formatter = new Intl.DateTimeFormat("en-CA", {
+    timeZone, hourCycle: "h23", year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit",
+  });
+  const wallTime = (instant) => {
+    const parts = Object.fromEntries(formatter.formatToParts(new Date(instant))
+      .filter((part) => part.type !== "literal").map((part) => [part.type, part.value]));
+    return Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), Number(parts.hour), Number(parts.minute));
+  };
+  // Nearby instants expose both offsets on the transition dates supported by
+  // this demo (Europe/Warsaw and Europe/London), without guessing one offset.
+  const offsets = new Set([-36, -12, 0, 12, 36].map((hours) => {
+    const instant = wanted + hours * 3_600_000;
+    return wallTime(instant) - instant;
+  }));
+  const matches = [...offsets].map((offset) => wanted - offset)
+    .filter((instant) => wallTime(instant) === wanted).sort((a, b) => a - b);
+  return matches.length ? new Date(matches[0]).toISOString() : null;
 }
 
 export function nextWeekdayAt(referenceDate, weekday, hour, minute) {
@@ -117,6 +123,7 @@ export function formatSlotMeta(startIso, timeZone) {
       timeZone,
       hour: "2-digit",
       minute: "2-digit",
+      timeZoneName: "shortOffset",
     }).format(date),
   };
 }
