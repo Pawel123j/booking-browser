@@ -70,6 +70,28 @@ describe("weekdayMap", () => {
 });
 
 describe("zonedDateToUtcIso", () => {
+  it.each([
+    ["Europe/Warsaw", 2],
+    ["Europe/London", 1],
+  ])("rejects a nonexistent spring wall time in %s", (zone, hour) => {
+    expect(zonedDateToUtcIso({ year: 2026, month: 3, day: 29, hour, minute: 30 }, zone)).toBeNull();
+  });
+
+  it.each([
+    ["Europe/Warsaw", 2],
+    ["Europe/London", 1],
+  ])("chooses the first occurrence of a repeated autumn time in %s", (zone, hour) => {
+    const result = zonedDateToUtcIso({ year: 2026, month: 10, day: 25, hour, minute: 30 }, zone);
+    expect(result).toBe("2026-10-25T00:30:00.000Z");
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: zone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(new Date(result));
+    expect(parts).toBe(`${String(hour).padStart(2, "0")}:30`);
+  });
+
+  it("handles midnight without interpreting hour 24 as the following day", () => {
+    expect(zonedDateToUtcIso({ year: 2026, month: 1, day: 15, hour: 0, minute: 0 }, "Europe/London"))
+      .toBe("2026-01-15T00:00:00.000Z");
+  });
+
   it("converts a wall-clock time in a zone to the correct UTC instant", () => {
     // 27 June 2026, 10:00 in Warsaw is CEST (UTC+2) => 08:00 UTC.
     const iso = zonedDateToUtcIso(

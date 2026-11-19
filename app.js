@@ -9,13 +9,18 @@ import {
   formatDateRange,
   formatSlotMeta,
 } from "./dateUtils.js";
+import { createBookingStore } from "./storage.js";
 import { validateData } from "./dataStore.js";
 import { computeAvailability } from "./availability.js";
 
 const STORAGE_KEY = "bookingflow-studio-v1";
 const THEME_KEY = "bookingflow-studio-theme";
 const SYNC_CHANNEL_NAME = "bookingflow-studio-sync";
-const channel = "BroadcastChannel" in window ? new BroadcastChannel(SYNC_CHANNEL_NAME) : null;
+let channel = null;
+try {
+  if ("BroadcastChannel" in window) channel = new BroadcastChannel(SYNC_CHANNEL_NAME);
+} catch { /* Storage remains usable without cross-tab notifications. */ }
+
 
 const seed = {
   services: [
@@ -137,28 +142,32 @@ function structuredSeed() {
   return JSON.parse(JSON.stringify(seed));
 }
 
-let memoryData = null;
-let unsaved = false;
-let recoveryRaw = null;
-function storageStatus(message = "") {
-  document.getElementById("storageStatus").textContent = message;
-  document.getElementById("retrySaveBtn").hidden = !unsaved;
-  document.getElementById("recoverDataBtn").hidden = recoveryRaw === null;
-}
+let storageProblem = null;
+let originalStorage = null;
+const bookingStore = createBookingStore({
+  getStorage: () => window.localStorage,
+  key: STORAGE_KEY,
+  makeDefault: buildSeedWithDemoData,
+  onSaved: () => channel?.postMessage({ type: "sync" }),
+  onChange: ({ problem, original }) => {
+    storageProblem = problem;
+    originalStorage = original;
+    document.getElementById("recoverDataBtn").hidden = original === null;
+    document.getElementById("retrySaveBtn").hidden = !problem;
+    document.getElementById("reloadStorageBtn").hidden = !problem;
+    document.getElementById("retrySaveBtn").disabled = problem === "read" || problem === "conflict";
+    const messages = {
+      invalid: "Zapisane dane są uszkodzone lub mają nieobsługiwany format. Oryginał pozostał nienaruszony. Pokazujemy dane tej sesji; zmiany nie zapisują się automatycznie.",
+      read: "Nie można odczytać zapisanych danych. Pracujesz tylko w pamięci tej karty. Nie zastępujemy danych, których nie mogliśmy odczytać.",
+      write: "Nie zapisano zmian. Nie udało się zapisać danych. Zmiany są tylko w pamięci tej karty i znikną po jej zamknięciu. Wcześniejszy zapis pozostał nienaruszony.",
+      conflict: "Inna karta zmieniła zapis. Nie zastąpiliśmy go. Wyeksportuj dane tej sesji przed ponownym wczytaniem.",
+    };
+    document.getElementById("storageStatus").textContent = problem ? `${messages[problem]} Użyj Eksport JSON, aby zachować bieżące dane.` : "";
+  },
+});
+
 function persist(data, requireDurable = false) {
-  const snapshot = { ...data, schemaVersion: 1 };
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(snapshot));
-    memoryData = snapshot;
-    unsaved = false;
-    storageStatus(recoveryRaw === null ? "" : "Oryginalny uszkodzony zapis możesz pobrać do odzyskania.");
-    channel?.postMessage({ type: "sync" });
-    return true;
-  } catch {
-    if (!requireDurable) { memoryData = snapshot; unsaved = true; }
-    storageStatus("Nie zapisano zmian. Dane działają w tej karcie; pobierz eksport przed zamknięciem lub ponów zapis.");
-    return false;
-  }
+  return bookingStore.save(validateData(data), requireDurable);
 }
 
 function buildSeedWithDemoData() {
@@ -244,22 +253,7 @@ function buildSeedWithDemoData() {
 }
 
 function loadData() {
-  if (unsaved && memoryData) return memoryData;
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) {
-      try { memoryData = validateData(JSON.parse(raw)); return memoryData; }
-      catch { recoveryRaw = raw; unsaved = true; memoryData ??= buildSeedWithDemoData(); storageStatus("Zapis jest uszkodzony. Oryginał zachowano; pobierz go przed ponownym zapisem. Pracujesz na danych tymczasowych."); return memoryData; }
-    }
-    memoryData ??= buildSeedWithDemoData();
-    persist(memoryData);
-    return memoryData;
-  } catch {
-    memoryData ??= buildSeedWithDemoData();
-    unsaved = true;
-    storageStatus("Pamięć przeglądarki jest niedostępna. Zmiany pozostają w tej karcie; pobierz eksport przed zamknięciem.");
-    return memoryData;
-  }
+  return bookingStore.load();
 }
 
 function refreshStateFromStorage() {
@@ -297,11 +291,14 @@ function setDefaultDates(days = 7) {
 function setTheme(theme) {
   const isLight = theme === "light";
   document.body.classList.toggle("light", isLight);
-  try { localStorage.setItem(THEME_KEY, isLight ? "light" : "dark"); } catch { /* Theme remains available in memory. */ }
+  try { window.localStorage.setItem(THEME_KEY, isLight ? "light" : "dark"); }
+  catch { announce("Motyw zmieniono tylko w tej sesji — zapis ustawień jest niedostępny."); }
 }
 
 function bootTheme() {
-  try { setTheme(localStorage.getItem(THEME_KEY) || "dark"); } catch { setTheme("dark"); }
+  let theme = "dark";
+  try { theme = window.localStorage.getItem(THEME_KEY) || "dark"; } catch { /* Default remains usable. */ }
+  document.body.classList.toggle("light", theme === "light");
 }
 
 function getSelectedService() {
@@ -330,7 +327,7 @@ function makeReferenceCode() {
 }
 
 function announce(message, kind = "muted") {
-  els.bookingStatus.textContent = message;
+  els.bookingStatus.textContent = storageProblem ? `${message} Zmiany są tylko w pamięci tej karty; użyj Eksport JSON.` : message;
   els.bookingStatus.className = `status-line ${kind}`;
 }
 
@@ -1148,7 +1145,7 @@ function importData(file) {
       if (!source || typeof source !== "object") throw new Error("Nieprawidłowa struktura");
       const next = validateData(parsed);
       if (!confirm(`Import zastąpi dane: ${next.services.length} usług, ${next.resources.length} specjalistów, ${next.appointments.length} rezerwacji, ${next.waitlist.length} wpisów kolejki. Kontynuować?`)) return;
-      if (!persist(next, true)) { announce("Import nie został zapisany. Poprzednie dane zachowano.", "muted"); return; }
+      if (!persist(next, storageProblem !== "invalid") && storageProblem !== "invalid") { announce("Import nie został zapisany. Poprzednie dane zachowano.", "muted"); return; }
       clearRescheduleMode();
       announce("Zaimportowałem dane z pliku JSON.", "badge success");
       rerenderAll();
@@ -1170,12 +1167,18 @@ function resetAllData() {
 }
 
 function bindEvents() {
+  document.getElementById("reloadStorageBtn").addEventListener("click", () => {
+    if (!confirm("Wczytać zapis ponownie? Niezapisane zmiany tej karty zostaną zastąpione. Najpierw zachowaj je przez Eksport JSON.")) return;
+    bookingStore.reload();
+    clearRescheduleMode();
+    rerenderAll();
+  });
   document.getElementById("retrySaveBtn").addEventListener("click", () => {
-    if (recoveryRaw !== null && !confirm("Zapis zastąpi uszkodzone dane. Najpierw pobierz oryginał. Kontynuować?")) return;
-    persist(memoryData);
+    if (storageProblem === "invalid" && !confirm("Zapis zachowa kopię uszkodzonych danych i zastąpi aktywny zapis. Kontynuować?")) return;
+    bookingStore.retry();
   });
   document.getElementById("recoverDataBtn").addEventListener("click", () => {
-    const url = URL.createObjectURL(new Blob([recoveryRaw], { type: "application/json" }));
+    const url = URL.createObjectURL(new Blob([originalStorage], { type: "application/json" }));
     const anchor = document.createElement("a"); anchor.href = url; anchor.download = "bookingflow-recovery.json"; anchor.click(); URL.revokeObjectURL(url);
   });
   els.loadSlotsBtn.addEventListener("click", () => {

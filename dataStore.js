@@ -1,6 +1,6 @@
 const object = (value) => value !== null && typeof value === "object" && !Array.isArray(value);
 const text = (value) => typeof value === "string";
-const id = (value) => (typeof value === "string" && value.length > 0) || (Number.isInteger(value) && value > 0);
+const id = (value) => (typeof value === "string" && value.length > 0) || (Number.isSafeInteger(value) && value > 0);
 const date = (value) => text(value) && /^\d{4}-\d{2}-\d{2}$/.test(value) && Number.isFinite(Date.parse(value)) && new Date(value).toISOString().slice(0, 10) === value;
 const instant = (value) => text(value) && /^\d{4}-\d{2}-\d{2}T/.test(value) && date(value.slice(0, 10)) && Number.isFinite(Date.parse(value));
 const zone = (value) => { try { return text(value) && !!new Intl.DateTimeFormat("pl", { timeZone: value }); } catch { return false; } };
@@ -14,8 +14,9 @@ function records(value, label) {
   }
   return value;
 }
+const clock = (value) => text(value) && /^([01]\d|2[0-3]):[0-5]\d$/.test(value);
 function hours(value) {
-  return object(value) && Object.entries(value).every(([day, windows]) => /^[0-6]$/.test(day) && Array.isArray(windows) && windows.every(pair => Array.isArray(pair) && pair.length === 2 && pair.every(v => text(v) && /^([01]\d|2[0-3]):[0-5]\d$/.test(v)) && pair[0] < pair[1]));
+  return object(value) && Object.entries(value).every(([day, windows]) => /^[0-6]$/.test(day) && Array.isArray(windows) && windows.every(pair => Array.isArray(pair) && pair.length === 2 && clock(pair[0]) && (clock(pair[1]) || pair[1] === "24:00") && pair[0] < pair[1]));
 }
 /** Validate first, then return a detached versioned snapshot. Legacy unversioned exports are supported. */
 export function validateData(input) {
@@ -26,8 +27,8 @@ export function validateData(input) {
   const services = records(source.services, "usługi");
   const resources = records(source.resources, "specjaliści");
   requireValid(services.length && resources.length, "puste usługi lub specjaliści");
-  for (const s of services) requireValid(Number.isInteger(s.id) && s.id > 0 && text(s.name) && s.name.trim() && text(s.category) && [s.durationMinutes, s.slotStepMinutes].every(v => Number.isInteger(v) && v > 0 && v <= 1440) && Number.isInteger(s.bufferAfterMinutes) && s.bufferAfterMinutes >= 0 && s.bufferAfterMinutes <= 1440 && Number.isFinite(s.price) && s.price >= 0, "usługa");
-  for (const r of resources) requireValid(Number.isInteger(r.id) && r.id > 0 && [r.name, r.role, r.locationName, r.notes].every(text) && zone(r.timeZone) && hours(r.weeklyHours) && hours(r.breakHours) && Array.isArray(r.blackoutDates) && r.blackoutDates.every(date), "specjalista / godziny");
+  for (const s of services) requireValid(Number.isSafeInteger(s.id) && s.id > 0 && text(s.name) && s.name.trim() && text(s.category) && [s.durationMinutes, s.slotStepMinutes].every(v => Number.isInteger(v) && v > 0 && v <= 1440) && Number.isInteger(s.bufferAfterMinutes) && s.bufferAfterMinutes >= 0 && s.bufferAfterMinutes <= 1440 && Number.isFinite(s.price) && s.price >= 0, "usługa");
+  for (const r of resources) requireValid(Number.isSafeInteger(r.id) && r.id > 0 && [r.name, r.role, r.locationName, r.notes].every(text) && zone(r.timeZone) && hours(r.weeklyHours) && hours(r.breakHours) && Array.isArray(r.blackoutDates) && r.blackoutDates.every(date), "specjalista / godziny");
   const appointments = records(source.appointments, "rezerwacje");
   const waitlist = records(source.waitlist, "kolejka");
   const mailbox = records(source.mailbox, "poczta");

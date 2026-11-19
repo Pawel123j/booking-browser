@@ -82,6 +82,9 @@ export function computeAvailability(service, resource, options = {}) {
 
         const startsAt = zonedDateToUtcIso({ ...parts, hour: startHour, minute: startMinute }, resource.timeZone);
         const endsAt = zonedDateToUtcIso({ ...parts, hour: endHour, minute: endMinute }, resource.timeZone);
+        // Omit DST gaps and intervals whose elapsed duration differs from the
+        // advertised wall-clock duration. Repeated times use the first offset.
+        if (!startsAt || !endsAt || Date.parse(endsAt) - Date.parse(startsAt) !== service.durationMinutes * 60_000) continue;
         const occupancyEndsAt = addMinutesIso(endsAt, service.bufferAfterMinutes);
 
         if (new Date(startsAt) < now) continue;

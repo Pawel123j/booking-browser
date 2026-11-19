@@ -1,12 +1,19 @@
 import re
+import subprocess
+import pytest
 from pathlib import Path
 from playwright.sync_api import expect
 from browser_support import browser, static_site, application
 
 REPO = Path(__file__).resolve().parents[1]
 
+@pytest.fixture(scope="session", autouse=True)
+def published_artifact():
+    subprocess.run(["npm", "run", "build"], cwd=REPO, check=True)
+
+
 def test_booking_create_reschedule_backup_restore_cancel(tmp_path):
-    with static_site(REPO) as url,browser() as b:
+    with static_site(REPO / "_site") as url,browser() as b:
         page=b.new_page(viewport={'width':1280,'height':900})
         errors=[];page.on('pageerror',lambda e:errors.append(str(e)))
         page.goto(url)
@@ -53,7 +60,7 @@ def test_booking_create_reschedule_backup_restore_cancel(tmp_path):
 
 
 def test_storage_quota_keeps_booking_usable_in_memory():
-    with static_site(REPO) as url, browser() as b:
+    with static_site(REPO / "_site") as url, browser() as b:
         page=b.new_page(viewport={'width':390,'height':844})
         page.add_init_script("""(() => { const original = Storage.prototype.setItem; window.__restoreSetItem = () => { Storage.prototype.setItem = original; }; Storage.prototype.setItem = function(key, value) { if (key === 'bookingflow-studio-v1') throw new DOMException('Full', 'QuotaExceededError'); return original.call(this, key, value); }; })();""")
         page.goto(url)
@@ -71,7 +78,7 @@ def test_storage_quota_keeps_booking_usable_in_memory():
 
 def test_accessibility_keyboard_tabs_and_mobile():
     from accessibility import assert_accessible
-    with static_site(REPO) as url, browser() as b:
+    with static_site(REPO / "_site") as url, browser() as b:
         page = b.new_page(viewport={'width':390, 'height':844})
         page.goto(url)
         page.screenshot(path=str(REPO / 'docs' / 'screenshots' / 'mobile.png'))

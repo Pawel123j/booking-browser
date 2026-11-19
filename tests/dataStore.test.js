@@ -17,6 +17,14 @@ describe("validateData", () => {
     expect(result.services).not.toBe(validData.services);
   });
 
+  it("preserves schedules ending at midnight from legacy backups", () => {
+    const data = structuredClone(validData);
+    data.resources[0].weeklyHours = { 1: [["23:00", "24:00"]] };
+    expect(validateData(data).resources[0].weeklyHours).toEqual(data.resources[0].weeklyHours);
+    data.resources[0].weeklyHours = { 1: [["24:00", "24:30"]] };
+    expect(() => validateData(data)).toThrow();
+  });
+
   it.each([
     [{ ...validData, services: [null] }],
     [{ ...validData, schemaVersion: 9 }],
